@@ -1,148 +1,101 @@
-# Microsoft Azure SDK for Node.js - Key Vault
+﻿# MS-Rest-Azure
 
-This project provides a Node.js package for accessing keys, secrets and certificates on Azure Key Vault. Right now it supports:
-- **Node.js version: 6.x.x or higher**
-- **REST API version: 2016-10-01**
+Infrastructure for error handling, tracing, and http client pipeline configuration. Required by nodeJS Azure client libraries, generated using AutoRest.
 
-## Features
+- **Node.js version: 4.x.x or higher**
 
-- Manage keys: create, import, update, delete, backup, restore, list and get.
-- Key operations: sign, verify, encrypt, decrypt, wrap, unwrap.
-- Secret operations: set, get, update and list.
-- Certificate operations: create, get, update, import, list, and manage contacts and issuers.
 
 ## How to Install
 
 ```bash
-npm install azure-keyvault
-```
-## Detailed Sample
-A sample that can be cloned and run can be found [here](https://github.com/Azure-Samples/key-vault-node-getting-started).
-
-## How to Use
-
-The following are some examples on how to create and consume secrets, certificates and keys.
-For the complete sample please visit [this sample](https://github.com/Azure/azure-sdk-for-node/tree/master/lib/services/keyVault/sample.js).
-
-### Authentication
-
-```javascript
-
-var KeyVault = require('azure-keyvault');
-var AuthenticationContext = require('adal-node').AuthenticationContext;
-
-var clientId = "<to-be-filled>";
-var clientSecret = "<to-be-filled>";
-var vaultUri = "<to-be-filled>";
-
-// Authenticator - retrieves the access token
-var authenticator = function (challenge, callback) {
-
-  // Create a new authentication context.
-  var context = new AuthenticationContext(challenge.authorization);
-  
-  // Use the context to acquire an authentication token.
-  return context.acquireTokenWithClientCredentials(challenge.resource, clientId, clientSecret, function (err, tokenResponse) {
-    if (err) throw err;
-    // Calculate the value to be set in the request's Authorization header and resume the call.
-    var authorizationValue = tokenResponse.tokenType + ' ' + tokenResponse.accessToken;
-
-    return callback(null, authorizationValue);
-  });
-
-};
+npm install ms-rest-azure
 ```
 
-### Create the KeyVaultClient
-
+## Usage
 ```javascript
+var msrestAzure = require('ms-rest-azure');
+```
+## Authentication
 
-var credentials = new KeyVault.KeyVaultCredentials(authenticator);
-var client = new KeyVault.KeyVaultClient(credentials);
+#### Interactive Login is the simplest and the best way to authenticate.
+It provides a url and code that needs to be copied and pasted in a browser and authenticated over there. If successful, 
+the user will get a DeviceTokenCredentials object.
+```javascript
+ var someAzureServiceClient = require('azure-arm-someService');
+ msRestAzure.interactiveLogin(function(err, credentials) {
+   if (err) return console.log(err);
+   var client = new someAzureServiceClient(credentials, 'your-subscriptionId');
+   client.someOperationGroup.method(param1, param2, function(err, result) {
+     if (err) return console.log(err);
+     return console.log(result);
+   });
+ });
 ```
 
-### Create a key and use it
-
+#### Login with username and password
+This mechanism will only work for organizational ids and ids that are not 2FA enabled.
+Otherwise it is better to use the above mechanism (interactive login).
 ```javascript
+ var someAzureServiceClient = require('azure-arm-someService');
+ msRestAzure.loginWithUsernamePassword(username, password, function(err, credentials) {
+   if (err) return console.log(err);
+   var client = new someAzureServiceClient(credentials, 'your-subscriptionId');
+   client.someOperationGroup.method(param1, param2, function(err, result) {
+     if (err) return console.log(err);
+     return console.log(result);
+   });
+ });
+```
 
-client.createKey(vaultUri, 'mykey', 'RSA', options, function(err, keyBundle) {
+### Non-Interactive Authentication
+If you need to create an automation account for non interactive or scripting scenarios then please take a look at the documentation over [here](https://github.com/Azure/azure-sdk-for-node/blob/master/Documentation/Authentication.md). Once you have created a service principal you can authenticate using the following code snippet.
 
-  // Retrieve the key
-  client.getKey(keyBundle.key.kid, function(getErr, getKeyBundle) {    
-    console.log(getKeyBundle);
+#### Login with service principal name and secret
+```javascript
+ var someAzureServiceClient = require('azure-arm-someService');
+ msRestAzure.loginWithServicePrincipalSecret(clientId, secret, domain, function(err, credentials) {
+   if (err) return console.log(err);
+   var client = new someAzureServiceClient(credentials, 'your-subscriptionId');
+   client.someOperationGroup.method(param1, param2, function(err, result) {
+     if (err) retutrn console.log(err);
+     return console.log(result);
+   });
+ });
+```
+## Using the generic (authenticated) AzureServiceClient to make custom requests to Azure.
+This can be very useful in doing something custom or while debugging.
 
-    // Encrypt a plain text
-    client.encrypt(keyBundle.key.kid, 'RSA-OAEP', encryptionContent, function (encryptErr, cipherText) {		 
-      console.log(cipherText);
-    });
+### A simple client to make a request using the sendRequest() method.
+To find out the power of sendRequest(), please visit [this link](http://azure.github.io/azure-sdk-for-node/ms-rest/latest/ServiceClient.html#sendRequest) for detailed documentation of supported options while sending a request.
+```javascript
+const msrest = require('ms-rest');
+const msRestAzure = require('ms-rest-azure');
+const AzureServiceClient = msRestAzure.AzureServiceClient;
 
-    // Sign a digest value
-    client.sign(keyBundle.key.kid, 'RS256', digest, function (signErr, signature) {	 
-      console.log(signature);
-    });
+const clientId = process.env['CLIENT_ID'];
+const secret = process.env['APPLICATION_SECRET'];
+const domain = process.env['DOMAIN']; //also known as tenantId
+const subscriptionId = process.env['AZURE_SUBSCRIPTION_ID'];
+var client;
 
-  });
+//an example to list resource groups in a subscription
+msRestAzure.loginWithServicePrincipalSecret(clientId, secret, domain).then((creds) => {
+  client = new AzureServiceClient(creds);
+  let options = {
+    method: 'GET',
+    url: `https://management.azure.com/subscriptions/${subscriptionId}/resourcegroups?api-version=2016-09-01`,
+    headers: {
+      'user-agent': 'MyTestApp/1.0'
+    }
+  }
+  return client.sendRequest(options);
+}).then((result) => {
+  console.dir(result, {depth: null, colors: true});
+}).catch((err) => {
+  console.dir(err, {depth: null, colors: true});
 });
 ```
 
+## Related Projects
 
-### Create a secret and list all secrets
-
-```javascript
-
-client.setSecret(vaultUri, 'mysecret', 'my password', options, function (err, secretBundle) {
-  
-  // List all secrets
-  var parsedId = KeyVault.parseSecretIdentifier(secretBundle.id);
-  client.getSecrets(parsedId.vault, parsedId.name, function (err, result) {
-    if (err) throw err;
-    
-    var loop = function (nextLink) {
-      if (nextLink !== null && nextLink !== undefined) {
-        client.getSecretsNext(nextLink, function (err, res) {
-          console.log(res);
-          loop(res.nextLink);
-        });
-      }
-    };
-    
-    console.log(result);
-    loop(result.nextLink);
-  });
-});
-```
-
-### Create a certificate and delete it
-
-```javascript
-
-//Create a certificate
-client.createCertificate(vaultUri, 'mycertificate', options, function (err, certificateOperation) {
-  console.log(certificateOperation));
-
-  // Poll the certificate status until it is created
-  var interval = setInterval(function getCertStatus() {
-        
-    var parsedId = KeyVault.parseCertificateOperationIdentifier(certificateOperation.id);
-    client.getCertificateOperation(parsedId.vault, parsedId.name, function (err, pendingCertificate) {
-      
-      if (pendingCertificate.status.toUpperCase() === 'completed'.toUpperCase()) {
-        clearInterval(interval);        
-        console.log(pendingCertificate);
-        
-        var parsedCertId = KeyVault.parseCertificateIdentifier(pendingCertificate.target);
-        //Delete the created certificate
-        client.deleteCertificate(parsedCertId.vault, parsedCertId.name, function (delErr, deleteResp) {          
-          console.log(deleteResp);
-        });
-      }
-    });
-  }, intervalTime);
-});
-
-```
-
-## Related projects
-
-- [Microsoft Azure SDK for Node.js](https://github.com/azure/azure-sdk-for-node)
-- [Microsoft Azure SDK for Node.js - Key Vault Management](https://github.com/Azure/azure-sdk-for-node/tree/master/lib/services/keyVaultManagement)
+- [AutoRest](https://github.com/Azure/AutoRest)
